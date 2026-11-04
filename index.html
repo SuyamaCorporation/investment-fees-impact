@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>投資信託 手数料インパクト計算機</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  canvas { max-width: 100%; }
+  .focus-visible:focus { outline: 2px solid #3b82f6; outline-offset: 2px; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+<div class="max-w-3xl mx-auto px-4 py-8">
+  <h1 class="text-2xl font-bold text-gray-800 mb-2">投資信託 手数料インパクト計算機</h1>
+  <p class="text-gray-500 text-sm mb-6">信託報酬が長期運用に与える影響を可視化します</p>
+
+  <div class="bg-white rounded-xl shadow p-6 mb-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="principal">元本（万円）</label>
+        <input id="principal" type="number" value="100" min="1" max="100000"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 focus-visible"
+          aria-label="元本（万円）">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="returnRate">年利（%）</label>
+        <input id="returnRate" type="number" value="5" min="0.1" max="30" step="0.1"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 focus-visible"
+          aria-label="年利（%）">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="feeRate">信託報酬率（%/年）</label>
+        <input id="feeRate" type="number" value="1.5" min="0" max="5" step="0.01"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 focus-visible"
+          aria-label="信託報酬率（%/年）">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1" for="years">運用期間（年）</label>
+        <input id="years" type="number" value="30" min="1" max="60"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 focus-visible"
+          aria-label="運用期間（年）">
+      </div>
+    </div>
+    <button id="calcBtn"
+      class="mt-4 w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg py-2.5 transition focus-visible focus:outline-none focus:ring-2 focus:ring-blue-400"
+      aria-label="計算する">計算する</button>
+  </div>
+
+  <div id="results" class="hidden">
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div class="bg-blue-50 rounded-xl p-4 text-center">
+        <div class="text-xs text-blue-500 font-medium mb-1">手数料なし 最終資産</div>
+        <div id="resNoFee" class="text-xl font-bold text-blue-700"></div>
+      </div>
+      <div class="bg-orange-50 rounded-xl p-4 text-center">
+        <div class="text-xs text-orange-500 font-medium mb-1">手数料あり 最終資産</div>
+        <div id="resWithFee" class="text-xl font-bold text-orange-700"></div>
+      </div>
+      <div class="bg-red-50 rounded-xl p-4 text-center">
+        <div class="text-xs text-red-500 font-medium mb-1">手数料による損失</div>
+        <div id="resDiff" class="text-xl font-bold text-red-700"></div>
+      </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow p-4 mb-4">
+      <canvas id="chart" height="300" aria-label="資産成長グラフ" role="img"></canvas>
+    </div>
+
+    <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4 text-sm text-yellow-800">
+      <span class="font-semibold">ポイント：</span>信託報酬は毎年複利で差が拡大します。低コストインデックスファンド（0.1〜0.2%）と高コストアクティブ（1〜2%）の差は30年で数百万円になることがあります。
+    </div>
+  </div>
+</div>
+
+<script>
+  function fmtMan(val) {
+    if (val >= 10000) return (val / 10000).toFixed(2) + '億円';
+    return val.toFixed(1) + '万円';
+  }
+
+  function calculate() {
+    const principal = parseFloat(document.getElementById('principal').value) || 100;
+    const r = parseFloat(document.getElementById('returnRate').value) / 100 || 0.05;
+    const fee = parseFloat(document.getElementById('feeRate').value) / 100 || 0.015;
+    const years = parseInt(document.getElementById('years').value) || 30;
+
+    const noFeeData = [];
+    const withFeeData = [];
+    for (let y = 0; y <= years; y++) {
+      noFeeData.push(principal * Math.pow(1 + r, y));
+      withFeeData.push(principal * Math.pow(1 + r - fee, y));
+    }
+
+    const finalNoFee = noFeeData[years];
+    const finalWithFee = withFeeData[years];
+    const diff = finalNoFee - finalWithFee;
+
+    document.getElementById('resNoFee').textContent = fmtMan(finalNoFee);
+    document.getElementById('resWithFee').textContent = fmtMan(finalWithFee);
+    document.getElementById('resDiff').textContent = '−' + fmtMan(diff);
+    document.getElementById('results').classList.remove('hidden');
+
+    drawChart(noFeeData, withFeeData, years, principal);
+  }
+
+  function drawChart(noFeeData, withFeeData, years, principal) {
+    const canvas = document.getElementById('chart');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.parentElement.clientWidth - 32;
+    const H = 300;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.scale(dpr, dpr);
+
+    const pad = { top: 20, right: 20, bottom: 40, left: 70 };
+    const cw = W - pad.left - pad.right;
+    const ch = H - pad.top - pad.bottom;
+
+    const maxVal = Math.max(...noFeeData);
+
+    ctx.clearRect(0, 0, W, H);
+
+    ctx.strokeStyle = '#e5e7eb';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= 5; i++) {
+      const y = pad.top + ch * (1 - i / 5);
+      ctx.beginPath();
+      ctx.moveTo(pad.left, y);
+      ctx.lineTo(pad.left + cw, y);
+      ctx.stroke();
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(fmtMan(maxVal * i / 5), pad.left - 5, y + 4);
+    }
+
+    function drawLine(data, color) {
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      data.forEach((v, i) => {
+        const x = pad.left + (i / years) * cw;
+        const y = pad.top + ch * (1 - v / maxVal);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    drawLine(noFeeData, '#3b82f6');
+    drawLine(withFeeData, '#f97316');
+
+    ctx.fillStyle = '#6b7280';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    const ticks = Math.min(years, 10);
+    for (let i = 0; i <= ticks; i++) {
+      const yr = Math.round(i * years / ticks);
+      const x = pad.left + (yr / years) * cw;
+      ctx.fillText(yr + '年', x, H - pad.bottom + 16);
+    }
+
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = '#3b82f6';
+    ctx.textAlign = 'left';
+    ctx.fillText('● 手数料なし', pad.left + 4, pad.top + 16);
+    ctx.fillStyle = '#f97316';
+    ctx.fillText('● 手数料あり', pad.left + 4, pad.top + 32);
+  }
+
+  document.getElementById('calcBtn').addEventListener('click', calculate);
+  calculate();
+</script>
+</body>
+</html>
